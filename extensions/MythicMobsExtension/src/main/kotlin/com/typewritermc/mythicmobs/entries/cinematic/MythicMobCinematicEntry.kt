@@ -64,16 +64,18 @@ class MobCinematicAction(
         super.startSegment(segment)
 
         Dispatchers.Sync.switchContext {
+            val hideMechanic = MythicBukkit.inst().skillManager.getMechanic("hide")
+            val targets = server.onlinePlayers
+                .filter { it.uniqueId != player.uniqueId }
+                .map { BukkitAdapter.adapt(it) }
+                .toSet()
+
             val mob =
                 MythicBukkit.inst().mobManager.spawnMob(
                     segment.mobName.get(player).parsePlaceholders(player),
                     segment.location.get(player).toBukkitLocation()
                 )
             this@MobCinematicAction.mob = mob
-            val hideMechanic = MythicBukkit.inst().skillManager.getMechanic("hide")
-
-            val targets =
-                server.onlinePlayers.filter { it.uniqueId != player.uniqueId }.map { BukkitAdapter.adapt(it) }.toSet()
 
             val skillMeta = SkillMetadataImpl(
                 SkillTriggers.API,
