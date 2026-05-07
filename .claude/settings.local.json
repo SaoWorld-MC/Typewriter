@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__context7__resolve-library-id",
+      "mcp__context7__query-docs",
+      "Bash(./gradlew build *)",
+      "Bash(./gradlew :MythicMobsExtension:build -x test)",
+      "Bash(git config *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git push *)",
+      "Bash(./gradlew :MythicMobsExtension:shadowJar)"
+    ]
+  }
+}

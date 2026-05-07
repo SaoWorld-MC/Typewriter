@@ -11,15 +11,12 @@ import com.typewritermc.engine.paper.entry.Criteria
 import com.typewritermc.engine.paper.entry.entries.*
 import com.typewritermc.engine.paper.entry.temporal.SimpleCinematicAction
 import com.typewritermc.engine.paper.extensions.placeholderapi.parsePlaceholders
+import com.typewritermc.engine.paper.plugin
 import com.typewritermc.engine.paper.utils.Sync
 import com.typewritermc.engine.paper.utils.server
 import com.typewritermc.engine.paper.utils.toBukkitLocation
-import io.lumine.mythic.api.mobs.GenericCaster
-import io.lumine.mythic.bukkit.BukkitAdapter
 import io.lumine.mythic.bukkit.MythicBukkit
 import io.lumine.mythic.core.mobs.ActiveMob
-import io.lumine.mythic.core.skills.SkillMetadataImpl
-import io.lumine.mythic.core.skills.SkillTriggers
 import kotlinx.coroutines.Dispatchers
 import org.bukkit.entity.Player
 
@@ -64,12 +61,6 @@ class MobCinematicAction(
         super.startSegment(segment)
 
         Dispatchers.Sync.switchContext {
-            val hideMechanic = MythicBukkit.inst().skillManager.getMechanic("hide")
-            val targets = server.onlinePlayers
-                .filter { it.uniqueId != player.uniqueId }
-                .map { BukkitAdapter.adapt(it) }
-                .toSet()
-
             val mob =
                 MythicBukkit.inst().mobManager.spawnMob(
                     segment.mobName.get(player).parsePlaceholders(player),
@@ -77,17 +68,11 @@ class MobCinematicAction(
                 )
             this@MobCinematicAction.mob = mob
 
-            val skillMeta = SkillMetadataImpl(
-                SkillTriggers.API,
-                GenericCaster(mob.entity),
-                mob.entity,
-                mob.location,
-                targets,
-                null,
-                1f
-            )
+            val entity = mob.entity.bukkitEntity ?: return@switchContext
 
-            hideMechanic.execute(skillMeta)
+            server.onlinePlayers
+                .filter { it.uniqueId != player.uniqueId }
+                .forEach { it.hideEntity(plugin, entity) }
         }
     }
 
