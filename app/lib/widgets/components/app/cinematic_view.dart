@@ -655,11 +655,10 @@ class CinematicView extends HookConsumerWidget {
         final entryId = entryIds[index];
         return _EntryRow(index: index, entryId: entryId, key: Key(entryId));
       },
-      onReorder: (oldIndex, newIndex) {
+      onReorderItem: (oldIndex, newIndex) {
         final page = ref.read(currentPageProvider);
         if (page == null) return;
-        final adjustedIndex = newIndex > oldIndex ? newIndex + 1 : newIndex;
-        page.reorderEntry(ref.passing, entryIds[oldIndex], adjustedIndex);
+        page.reorderEntry(ref.passing, entryIds[oldIndex], newIndex);
       },
     );
   }
