@@ -325,10 +325,11 @@ fun JsonElement.changePathValue(path: String, value: JsonElement) {
                 current.asJsonObject.add(key, value)
             } else if (current.isJsonArray) {
                 val i = Integer.parseInt(key)
-                while (current.asJsonArray.size() <= i) {
-                    current.asJsonArray.add(JsonNull.INSTANCE)
+                if (i < current.asJsonArray.size()) {
+                    current.asJsonArray[i] = value
+                } else {
+                    current.asJsonArray.add(value)
                 }
-                current.asJsonArray[i] = value
             }
         } else if (current.isJsonObject) {
             if (!current.asJsonObject.has(key)) {
@@ -337,10 +338,13 @@ fun JsonElement.changePathValue(path: String, value: JsonElement) {
             current = current.asJsonObject[key]
         } else if (current.isJsonArray) {
             val i = Integer.parseInt(key)
-            while (current.asJsonArray.size() <= i) {
-                current.asJsonArray.add(JsonObject())
+            if (i < current.asJsonArray.size()) {
+                current = current.asJsonArray[i]
+            } else {
+                val newObj = JsonObject()
+                current.asJsonArray.add(newObj)
+                current = newObj
             }
-            current = current.asJsonArray[i]
         }
     }
 }
@@ -363,10 +367,7 @@ private fun JsonElement.createPath(path: String) {
                 }
                 return cur
             } else {
-                while (current.asJsonArray.size() <= index) {
-                    current.asJsonArray.add(JsonNull.INSTANCE)
-                }
-                array.set(index, value)
+                array.add(value)
                 return value
             }
         } else {
