@@ -139,6 +139,7 @@ class CameraCinematicAction(
     private lateinit var action: CameraAction
 
     private var originalState: PlayerState? = null
+    private var visibilityIsolation: PlayerVisibilityIsolation? = null
     private var interceptor: InterceptionBundle? = null
     private var listener: Listener? = null
     private var boundStateSubscription: InteractionBoundStateOverrideSubscription? = null
@@ -166,13 +167,21 @@ class CameraCinematicAction(
 
         if (segment != previousSegment) {
             if (previousSegment == null && segment != null) {
-                player.setup()
-                action.startSegment(segment)
+                try {
+                    player.setup()
+                    action.startSegment(segment)
+                } catch (exception: Exception) {
+                    player.teardown()
+                    throw exception
+                }
             } else if (segment != null) {
                 action.switchSegment(segment)
             } else {
-                action.stop()
-                player.teardown()
+                try {
+                    action.stop()
+                } finally {
+                    player.teardown()
+                }
             }
 
             previousSegment = segment
@@ -202,8 +211,6 @@ class CameraCinematicAction(
                     LOCATION,
                     ALLOW_FLIGHT,
                     FLYING,
-                    VISIBLE_PLAYERS,
-                    SHOWING_PLAYER,
                     EffectStateProvider(INVISIBILITY),
                     VELOCITY.takeIf { entry.advancedCameraSettings.restoreVelocity }
                 )
@@ -216,10 +223,7 @@ class CameraCinematicAction(
             isFlying = true
             addPotionEffect(PotionEffect(INVISIBILITY, INFINITE_DURATION, 0, false, false))
 
-            server.onlinePlayers.filter { it.uniqueId != uniqueId }.forEach {
-                it.hidePlayer(plugin, this@setup)
-                this@setup.hidePlayer(plugin, it)
-            }
+            visibilityIsolation = PlayerVisibilityIsolation(this@setup).also { it.start() }
 
             // In creative mode, when the player opens the inventory while their inventory is fake cleared,
             // The actual inventory will be cleared.
@@ -279,16 +283,21 @@ class CameraCinematicAction(
         listener = null
 
         Dispatchers.Sync.switchContext {
-            interceptor?.cancel()
-            interceptor = null
+            try {
+                interceptor?.cancel()
 
-            originalState?.let {
-                restore(it)
-            }
-            originalState = null
+                originalState?.let {
+                    restore(it)
+                }
 
-            if (gameMode != GameMode.CREATIVE && !isFloodgate) {
-                restoreInventory()
+                if (gameMode != GameMode.CREATIVE && !isFloodgate) {
+                    restoreInventory()
+                }
+            } finally {
+                visibilityIsolation?.stop()
+                visibilityIsolation = null
+                interceptor = null
+                originalState = null
             }
         }
 
@@ -302,8 +311,11 @@ class CameraCinematicAction(
 
     override suspend fun teardown() {
         super.teardown()
-        action.stop()
-        player.teardown()
+        try {
+            action.stop()
+        } finally {
+            player.teardown()
+        }
     }
 
     override fun canFinish(frame: Int): Boolean = entry.segments canFinishAt frame

@@ -26,7 +26,6 @@ import com.typewritermc.engine.paper.extensions.packetevents.meta
 import com.typewritermc.engine.paper.extensions.packetevents.spectateEntity
 import com.typewritermc.engine.paper.extensions.packetevents.stopSpectatingEntity
 import com.typewritermc.engine.paper.interaction.*
-import com.typewritermc.engine.paper.plugin
 import com.typewritermc.engine.paper.utils.*
 import com.typewritermc.engine.paper.utils.GenericPlayerStateProvider.*
 import kotlinx.coroutines.Dispatchers
@@ -91,6 +90,7 @@ class LockInteractionBound(
 ) : ListenerInteractionBound {
     private var handler: LockInteractionBoundHandler? = null
     private var playerState: PlayerState? = null
+    private var visibilityIsolation: PlayerVisibilityIsolation? = null
     private var previousPosition: Position = Position.ORIGIN
     private var interceptor: InterceptionBundle? = null
 
@@ -104,7 +104,7 @@ class LockInteractionBound(
 
     private suspend fun setup() {
         require(playerState == null)
-        playerState = player.state(LOCATION, FLYING, ALLOW_FLIGHT, VISIBLE_PLAYERS, SHOWING_PLAYER)
+        playerState = player.state(LOCATION, FLYING, ALLOW_FLIGHT)
         player.allowFlight = true
         player.isFlying = true
         // For bedrock players we don't need to fake the inventory as we already hide the hotbar and item.
@@ -113,10 +113,7 @@ class LockInteractionBound(
         }
 
         Dispatchers.Sync.switchContext {
-            server.onlinePlayers.forEach {
-                it.hidePlayer(plugin, player)
-                player.hidePlayer(plugin, it)
-            }
+            visibilityIsolation = PlayerVisibilityIsolation(player).also { it.start() }
         }
 
         interceptor = player.interceptPackets {
@@ -172,16 +169,27 @@ class LockInteractionBound(
     }
 
     private suspend fun dispose() {
-        interceptor?.cancel()
+        val currentInterceptor = interceptor
+        val currentHandler = handler
         interceptor = null
-        handler?.dispose()
         handler = null
-        if (!player.isFloodgate) {
-            player.restoreInventory()
-        }
-        Dispatchers.Sync.switchContext {
-            player.restore(playerState)
-            playerState = null
+
+        try {
+            currentInterceptor?.cancel()
+            currentHandler?.dispose()
+        } finally {
+            Dispatchers.Sync.switchContext {
+                try {
+                    if (!player.isFloodgate) {
+                        player.restoreInventory()
+                    }
+                    player.restore(playerState)
+                } finally {
+                    visibilityIsolation?.stop()
+                    visibilityIsolation = null
+                    playerState = null
+                }
+            }
         }
     }
 

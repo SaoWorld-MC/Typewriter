@@ -18,7 +18,15 @@ import com.typewritermc.engine.paper.utils.toBukkitLocation
 import io.lumine.mythic.bukkit.MythicBukkit
 import io.lumine.mythic.core.mobs.ActiveMob
 import kotlinx.coroutines.Dispatchers
+import org.bukkit.Bukkit
+import org.bukkit.entity.Entity
 import org.bukkit.entity.Player
+import org.bukkit.event.EventHandler
+import org.bukkit.event.EventPriority
+import org.bukkit.event.HandlerList
+import org.bukkit.event.Listener
+import org.bukkit.event.player.PlayerJoinEvent
+import java.util.UUID
 
 @Entry("mythicmob_cinematic", "Spawn a MythicMob during a cinematic", Colors.PURPLE, "fa6-solid:dragon")
 /**
@@ -56,11 +64,15 @@ class MobCinematicAction(
     override val segments: List<MythicMobSegment> = entry.segments
 
     private var mob: ActiveMob? = null
+    private val trackedEntities = mutableSetOf<UUID>()
+    private var listener: Listener? = null
 
     override suspend fun startSegment(segment: MythicMobSegment) {
         super.startSegment(segment)
 
         Dispatchers.Sync.switchContext {
+            unregisterListener()
+
             val mob =
                 MythicBukkit.inst().mobManager.spawnMob(
                     segment.mobName.get(player).parsePlaceholders(player),
@@ -69,19 +81,69 @@ class MobCinematicAction(
             this@MobCinematicAction.mob = mob
 
             val entity = mob.entity.bukkitEntity ?: return@switchContext
+            track(entity)
+            listener = object : Listener {
+                @EventHandler(priority = EventPriority.MONITOR)
+                fun onPlayerJoin(event: PlayerJoinEvent) {
+                    hideTrackedEntities(event.player)
+                }
+            }
+            plugin.server.pluginManager.registerEvents(listener!!, plugin)
+            hideTrackedEntities()
+        }
+    }
 
-            server.onlinePlayers
-                .filter { it.uniqueId != player.uniqueId }
-                .forEach { it.hideEntity(plugin, entity) }
+    override suspend fun tickSegment(segment: MythicMobSegment, frame: Int) {
+        super.tickSegment(segment, frame)
+        if (frame % 2 != 0) return
+        Dispatchers.Sync.switchContext {
+            hideTrackedEntities()
         }
     }
 
     override suspend fun stopSegment(segment: MythicMobSegment) {
         super.stopSegment(segment)
 
-        mob?.let {
-            it.despawn()
-            mob = null
+        Dispatchers.Sync.switchContext {
+            try {
+                mob?.despawn()
+            } finally {
+                unregisterListener()
+                mob = null
+                trackedEntities.clear()
+            }
+        }
+    }
+
+    private fun hideTrackedEntities() {
+        currentEntities().forEach { entity ->
+            server.onlinePlayers
+                .filter { it.uniqueId != player.uniqueId }
+                .forEach { it.hideEntity(plugin, entity) }
+        }
+    }
+
+    private fun hideTrackedEntities(viewer: Player) {
+        if (viewer.uniqueId == player.uniqueId) return
+        currentEntities().forEach { viewer.hideEntity(plugin, it) }
+    }
+
+    private fun currentEntities(): List<Entity> {
+        mob?.entity?.bukkitEntity?.let(::track)
+        return trackedEntities.mapNotNull { Bukkit.getEntity(it) }
+            .filter { it.isValid && !it.isDead }
+    }
+
+    private fun track(entity: Entity) {
+        if (!entity.isValid || entity.isDead) return
+        trackedEntities.add(entity.uniqueId)
+        entity.passengers.forEach(::track)
+    }
+
+    private fun unregisterListener() {
+        listener?.let {
+            HandlerList.unregisterAll(it)
+            listener = null
         }
     }
 }
