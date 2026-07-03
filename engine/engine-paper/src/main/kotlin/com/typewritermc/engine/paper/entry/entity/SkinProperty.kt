@@ -29,6 +29,17 @@ class PlayerSkinCache : Initializable {
 
     operator fun get(playerId: UUID): SkinProperty {
         cache.getIfPresent(playerId)?.let { return it }
+
+        val onlinePlayer = Bukkit.getPlayer(playerId)
+        if (onlinePlayer != null) {
+            val textures = onlinePlayer.playerProfile.properties.firstOrNull { it.name == "textures" }
+            if (textures != null) {
+                val skin = SkinProperty(textures.value, textures.signature ?: "")
+                cache.put(playerId, skin)
+                return skin
+            }
+        }
+
         cache.put(playerId, SkinProperty())
         jobs[playerId]?.cancel()
         jobs[playerId] = Dispatchers.UntickedAsync.launch {

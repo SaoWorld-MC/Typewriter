@@ -1,5 +1,13 @@
 package com.typewritermc.engine.paper.utils
 
+import com.github.retrooper.packetevents.protocol.item.ItemStack as PacketItemStack
+import com.github.retrooper.packetevents.protocol.packettype.PacketType
+import com.github.retrooper.packetevents.protocol.player.Equipment
+import com.github.retrooper.packetevents.protocol.player.EquipmentSlot
+import com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerEntityEquipment
+import com.typewritermc.engine.paper.extensions.packetevents.sendPacketTo
+import com.typewritermc.engine.paper.interaction.InterceptionBundle
+import com.typewritermc.engine.paper.interaction.interceptPackets
 import com.typewritermc.engine.paper.plugin
 import org.bukkit.Bukkit
 import org.bukkit.entity.Player
@@ -71,11 +79,14 @@ class PlayerVisibilityIsolation(
 }
 
 private val hiddenPlayerPairs = ConcurrentHashMap<PlayerVisibilityPair, Int>()
+private val equipmentMaskInterceptors = ConcurrentHashMap<PlayerVisibilityPair, InterceptionBundle>()
 
 private fun retainPlayerHide(viewer: Player, target: Player) {
     val key = PlayerVisibilityPair(viewer.uniqueId, target.uniqueId)
     val count = hiddenPlayerPairs.merge(key, 1, Int::plus) ?: 1
     if (count == 1) {
+        clearEquipmentFor(viewer, target)
+        retainEquipmentMask(viewer, target, key)
         viewer.hidePlayer(plugin, target)
     }
 }
@@ -95,12 +106,44 @@ private fun releasePlayerHide(viewerId: UUID, targetId: UUID) {
     }
 
     if (!shouldShow) return
+    equipmentMaskInterceptors.remove(key)?.cancel()
     val viewer = Bukkit.getPlayer(viewerId) ?: return
     val target = Bukkit.getPlayer(targetId) ?: return
     if (viewer.isOnline && target.isOnline) {
         viewer.showPlayer(plugin, target)
     }
 }
+
+private fun retainEquipmentMask(viewer: Player, target: Player, key: PlayerVisibilityPair) {
+    val targetEntityId = target.entityId
+    equipmentMaskInterceptors.computeIfAbsent(key) {
+        viewer.interceptPackets {
+            PacketType.Play.Server.ENTITY_EQUIPMENT { event ->
+                val packet = WrapperPlayServerEntityEquipment(event)
+                if (packet.entityId == targetEntityId) {
+                    event.isCancelled = true
+                }
+            }
+        }
+    }
+}
+
+private fun clearEquipmentFor(viewer: Player, target: Player) {
+    if (!viewer.isOnline || !target.isOnline) return
+    WrapperPlayServerEntityEquipment(
+        target.entityId,
+        emptyEquipment()
+    ) sendPacketTo viewer
+}
+
+private fun emptyEquipment() = listOf(
+    Equipment(EquipmentSlot.MAIN_HAND, PacketItemStack.EMPTY),
+    Equipment(EquipmentSlot.OFF_HAND, PacketItemStack.EMPTY),
+    Equipment(EquipmentSlot.HELMET, PacketItemStack.EMPTY),
+    Equipment(EquipmentSlot.CHEST_PLATE, PacketItemStack.EMPTY),
+    Equipment(EquipmentSlot.LEGGINGS, PacketItemStack.EMPTY),
+    Equipment(EquipmentSlot.BOOTS, PacketItemStack.EMPTY),
+)
 
 private data class PlayerVisibilityPair(
     val viewerId: UUID,

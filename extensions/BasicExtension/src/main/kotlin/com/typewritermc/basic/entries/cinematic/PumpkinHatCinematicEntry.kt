@@ -2,6 +2,8 @@ package com.typewritermc.basic.entries.cinematic
 
 import com.github.retrooper.packetevents.protocol.packettype.PacketType
 import com.github.retrooper.packetevents.protocol.player.Equipment
+import com.github.retrooper.packetevents.wrapper.play.client.WrapperPlayClientClickWindow
+import com.github.retrooper.packetevents.wrapper.play.client.WrapperPlayClientCreativeInventoryAction
 import com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerEntityEquipment
 import com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerSetSlot
 import com.typewritermc.core.books.pages.Colors
@@ -19,6 +21,7 @@ import com.typewritermc.engine.paper.interaction.InterceptionBundle
 import com.typewritermc.engine.paper.interaction.interceptPackets
 import com.typewritermc.engine.paper.utils.item.Item
 import com.typewritermc.engine.paper.utils.name
+import com.typewritermc.engine.paper.utils.restoreInventory
 import com.typewritermc.engine.paper.utils.unClickable
 import org.bukkit.Material
 import org.bukkit.entity.Player
@@ -82,6 +85,22 @@ class PumpkinHatCinematicAction(
         }
             .toPacketItem()
         interceptor = player.interceptPackets {
+            PacketType.Play.Client.CLICK_WINDOW { event ->
+                val packet = WrapperPlayClientClickWindow(event)
+                if (packet.windowId != 0) return@CLICK_WINDOW
+                event.isCancelled = true
+                refreshFakePumpkin(item)
+            }
+            PacketType.Play.Client.CLICK_WINDOW_BUTTON { event ->
+                event.isCancelled = true
+                refreshFakePumpkin(item)
+            }
+            PacketType.Play.Client.CREATIVE_INVENTORY_ACTION { event ->
+                val packet = WrapperPlayClientCreativeInventoryAction(event)
+                if (packet.slot !in 5..8 && packet.slot != 39) return@CREATIVE_INVENTORY_ACTION
+                event.isCancelled = true
+                refreshFakePumpkin(item)
+            }
             PacketType.Play.Server.SET_SLOT { event ->
                 val packet = WrapperPlayServerSetSlot(event)
                 if (packet.slot != 39) return@SET_SLOT
@@ -94,6 +113,14 @@ class PumpkinHatCinematicAction(
             listOf(Equipment(com.github.retrooper.packetevents.protocol.player.EquipmentSlot.HELMET, item))
         ) sendPacketTo player
 
+    }
+
+    private fun refreshFakePumpkin(item: com.github.retrooper.packetevents.protocol.item.ItemStack) {
+        player.restoreInventory()
+        WrapperPlayServerEntityEquipment(
+            player.entityId,
+            listOf(Equipment(com.github.retrooper.packetevents.protocol.player.EquipmentSlot.HELMET, item))
+        ) sendPacketTo player
     }
 
     override suspend fun stopSegment(segment: PumpkinHatSegment) {
