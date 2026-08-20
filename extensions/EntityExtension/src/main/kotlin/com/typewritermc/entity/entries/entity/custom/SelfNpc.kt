@@ -5,13 +5,19 @@ import com.typewritermc.core.entries.Ref
 import com.typewritermc.core.extension.annotations.Entry
 import com.typewritermc.core.extension.annotations.Help
 import com.typewritermc.core.extension.annotations.OnlyTags
+import com.typewritermc.core.utils.UntickedAsync
+import com.typewritermc.core.utils.launch
+import com.typewritermc.core.utils.switchContext
 import com.typewritermc.engine.paper.entry.entity.*
 import com.typewritermc.engine.paper.entry.entries.ConstVar
 import com.typewritermc.engine.paper.entry.entries.EntityData
 import com.typewritermc.engine.paper.entry.entries.EntityProperty
 import com.typewritermc.engine.paper.entry.entries.Var
 import com.typewritermc.engine.paper.utils.Sound
+import com.typewritermc.engine.paper.utils.Sync
 import com.typewritermc.entity.entries.entity.minecraft.PlayerEntity
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import org.bukkit.entity.Player
 import java.util.*
 
@@ -41,6 +47,8 @@ class SelfNpc(
     player: Player,
 ) : FakeEntity(player) {
     private val playerEntity = PlayerEntity(player, ConstVar(player.name))
+    private var skinJob: Job? = null
+    private var disposed = false
 
     override val state: EntityState
         get() = playerEntity.state
@@ -50,7 +58,24 @@ class SelfNpc(
     }
 
     private fun setup() {
-        consumeProperties(player.skin)
+        skinJob?.cancel()
+
+        val skin = player.skin
+        if (skin.texture.isNotBlank()) {
+            consumeProperties(skin)
+            return
+        }
+
+        skinJob = Dispatchers.UntickedAsync.launch {
+            val loadedSkin = player.loadSkin()
+            if (loadedSkin.texture.isBlank()) return@launch
+
+            Dispatchers.Sync.switchContext {
+                if (!disposed && player.isOnline) {
+                    consumeProperties(loadedSkin)
+                }
+            }
+        }
     }
 
     override val entityId: Int
@@ -82,6 +107,9 @@ class SelfNpc(
     override fun contains(entityId: Int): Boolean = playerEntity.contains(entityId)
 
     override fun dispose() {
+        disposed = true
+        skinJob?.cancel()
+        skinJob = null
         super.dispose()
         playerEntity.dispose()
     }

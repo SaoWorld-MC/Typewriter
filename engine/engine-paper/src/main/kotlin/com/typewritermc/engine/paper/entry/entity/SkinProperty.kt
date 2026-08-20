@@ -3,10 +3,12 @@ package com.typewritermc.engine.paper.entry.entity
 import com.google.common.cache.CacheBuilder
 import com.typewritermc.core.extension.Initializable
 import com.typewritermc.core.utils.UntickedAsync
-import com.typewritermc.core.utils.launch
 import com.typewritermc.engine.paper.entry.entries.EntityProperty
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.future.await
 import org.bukkit.Bukkit
 import org.bukkit.OfflinePlayer
@@ -40,9 +42,23 @@ class PlayerSkinCache : Initializable {
             }
         }
 
-        cache.put(playerId, SkinProperty())
-        jobs[playerId]?.cancel()
-        jobs[playerId] = Dispatchers.UntickedAsync.launch {
+        requestSkin(playerId)
+        return SkinProperty()
+    }
+
+    /**
+     * Waits for the player's signed texture property without blocking the server thread.
+     */
+    suspend fun load(playerId: UUID): SkinProperty {
+        cache.getIfPresent(playerId)?.let { return it }
+        requestSkin(playerId).join()
+        return cache.getIfPresent(playerId) ?: SkinProperty()
+    }
+
+    private fun requestSkin(playerId: UUID): Job {
+        jobs[playerId]?.let { return it }
+
+        val newJob = CoroutineScope(Dispatchers.UntickedAsync).launch(start = CoroutineStart.LAZY) {
             val offlinePlayer = Bukkit.getOfflinePlayer(playerId)
             var profile = offlinePlayer.playerProfile
             if (!profile.hasTextures()) {
@@ -53,7 +69,14 @@ class PlayerSkinCache : Initializable {
             val skin = SkinProperty(textures.value, textures.signature ?: "")
             cache.put(playerId, skin)
         }
-        return SkinProperty()
+        val job = jobs.putIfAbsent(playerId, newJob) ?: newJob
+        if (job === newJob) {
+            newJob.invokeOnCompletion { jobs.remove(playerId, newJob) }
+            newJob.start()
+        } else {
+            newJob.cancel()
+        }
+        return job
     }
 
     override suspend fun initialize() {}
@@ -67,3 +90,9 @@ class PlayerSkinCache : Initializable {
 
 val OfflinePlayer.skin: SkinProperty
     get() = KoinJavaComponent.get<PlayerSkinCache>(PlayerSkinCache::class.java)[uniqueId]
+
+/**
+ * Resolves the player's signed texture property when it is not already cached.
+ */
+suspend fun OfflinePlayer.loadSkin(): SkinProperty =
+    KoinJavaComponent.get<PlayerSkinCache>(PlayerSkinCache::class.java).load(uniqueId)

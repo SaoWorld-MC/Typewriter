@@ -4,6 +4,7 @@ import com.github.retrooper.packetevents.protocol.entity.pose.EntityPose
 import com.github.retrooper.packetevents.protocol.entity.type.EntityTypes
 import com.github.retrooper.packetevents.protocol.player.TextureProperty
 import com.github.retrooper.packetevents.protocol.player.UserProfile
+import com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerPlayerInfoRemove
 import com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerTeams
 import com.typewritermc.core.books.pages.Colors
 import com.typewritermc.core.entries.Ref
@@ -16,6 +17,7 @@ import com.typewritermc.engine.paper.entry.entity.*
 import com.typewritermc.engine.paper.entry.entries.*
 import com.typewritermc.engine.paper.extensions.packetevents.meta
 import com.typewritermc.engine.paper.extensions.packetevents.sendPacketTo
+import com.typewritermc.engine.paper.plugin
 import com.typewritermc.engine.paper.utils.Sound
 import com.typewritermc.engine.paper.utils.move
 import com.typewritermc.engine.paper.utils.stripped
@@ -32,6 +34,7 @@ import me.tofaa.entitylib.wrapper.WrapperPlayer
 import net.kyori.adventure.text.Component
 import net.kyori.adventure.text.format.NamedTextColor
 import org.bukkit.entity.Player
+import org.bukkit.scheduler.BukkitTask
 import java.util.*
 
 @Entry("player_definition", "A player entity", Colors.ORANGE, "material-symbols:account-box")
@@ -72,7 +75,12 @@ class PlayerEntity(
     player: Player,
     displayName: Var<String>,
 ) : FakeEntity(player) {
+    companion object {
+        private const val PLAYER_INFO_HIDE_DELAY_TICKS = 1L
+    }
+
     private var sitEntity: WrapperEntity? = null
+    private var playerInfoHideTask: BukkitTask? = null
 
     private var entity: WrapperPlayer
     override val entityId: Int
@@ -91,7 +99,7 @@ class PlayerEntity(
         entity =
             WrapperPlayer(UserProfile(uuid, "\u2063${displayName.get(player).stripped().replace(" ", "_")}"), entityId)
 
-        entity.isInTablist = false
+        entity.isInTablist = true
         entity.meta<PlayerMeta> {
             isCapeEnabled = true
             isHatEnabled = true
@@ -113,8 +121,12 @@ class PlayerEntity(
                     entity.move(property)
                 }
 
-                is SkinProperty -> entity.textureProperties =
-                    listOf(TextureProperty("textures", property.texture, property.signature))
+                is SkinProperty -> {
+                    entity.isInTablist = true
+                    entity.textureProperties =
+                        listOf(TextureProperty("textures", property.texture, property.signature))
+                    schedulePlayerInfoHide()
+                }
 
                 is PoseProperty -> {
                     if (property.pose == EntityPose.SITTING) {
@@ -139,6 +151,7 @@ class PlayerEntity(
         }
         entity.spawn(location.toPacketLocation())
         entity.addViewer(player.uniqueId)
+        schedulePlayerInfoHide()
 
         sitEntity?.addPassengers(this.entity)
 
@@ -181,6 +194,10 @@ class PlayerEntity(
     }
 
     override fun dispose() {
+        playerInfoHideTask?.cancel()
+        playerInfoHideTask = null
+        WrapperPlayServerPlayerInfoRemove(entity.uuid) sendPacketTo player
+
         @Suppress("DEPRECATION")
         WrapperPlayServerTeams(
             "typewriter-$entityId",
@@ -193,6 +210,17 @@ class PlayerEntity(
         sitEntity?.despawn()
         sitEntity?.remove()
         sitEntity = null
+    }
+
+    private fun schedulePlayerInfoHide() {
+        if (!entity.isSpawned) return
+
+        playerInfoHideTask?.cancel()
+        playerInfoHideTask = plugin.server.scheduler.runTaskLater(plugin, Runnable {
+            playerInfoHideTask = null
+            if (!entity.isSpawned || !player.isOnline) return@Runnable
+            entity.isInTablist = false
+        }, PLAYER_INFO_HIDE_DELAY_TICKS)
     }
 
     private fun sit(location: PositionProperty? = null) {
