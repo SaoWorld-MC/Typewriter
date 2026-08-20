@@ -9,7 +9,13 @@
       "Bash(git add *)",
       "Bash(git commit *)",
       "Bash(git push *)",
-      "Bash(./gradlew :MythicMobsExtension:shadowJar)"
+      "Bash(./gradlew :MythicMobsExtension:shadowJar)",
+      "Bash(jar tf *)",
+      "Bash(javap -p -cp api-3.1.0-SNAPSHOT-default.jar me.tofaa.entitylib.wrapper.WrapperPlayer)",
+      "Bash(javap -c -p -cp api-3.1.0-SNAPSHOT-default.jar me.tofaa.entitylib.wrapper.WrapperEntity)",
+      "Bash(javap -c -p -cp api-3.1.0-SNAPSHOT-default.jar me.tofaa.entitylib.wrapper.WrapperEntityEquipment)",
+      "Bash(./gradlew :EntityExtension:compileKotlin)",
+      "Bash(./gradlew :EntityExtension:build)"
     ]
   }
 }
